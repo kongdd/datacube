@@ -1,0 +1,5 @@
+{
+  "name": "React Earth Datacube",
+  "description": "A high-performance 3D visualization of Earth system data (temperature, vegetation, precipitation) using WebGL shaders, similar to Lexcube.",
+  "requestFramePermissions": []
+}
