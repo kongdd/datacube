@@ -29,5 +29,4 @@ export interface AppState {
   opacity: number;
   threshold: number; // Value below which to discard (-1 to 1)
   timeLength: number; // Scaling factor for the Z-axis (Time axis) in Cube mode
-  showSlicePanel: boolean; // Toggle for the 2D time-slice view
 }

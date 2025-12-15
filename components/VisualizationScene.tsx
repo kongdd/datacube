@@ -5,27 +5,6 @@ import * as THREE from 'three';
 import { AppState, DatasetId, VisualizationMode } from '../types';
 import { VERTEX_SHADER, FRAGMENT_SHADER } from '../constants';
 
-// Augment JSX namespace to recognize React Three Fiber intrinsic elements
-declare global {
-  namespace JSX {
-    interface IntrinsicElements {
-      mesh: any;
-      sphereGeometry: any;
-      shaderMaterial: any;
-      group: any;
-      planeGeometry: any;
-      meshBasicMaterial: any;
-      boxGeometry: any;
-      lineSegments: any;
-      edgesGeometry: any;
-      lineBasicMaterial: any;
-      color: any;
-      ambientLight: any;
-      directionalLight: any;
-    }
-  }
-}
-
 interface VisualizationSceneProps {
   state: AppState;
 }
@@ -53,7 +32,6 @@ const VisualizationScene: React.FC<VisualizationSceneProps> = ({ state }) => {
       uThreshold: { value: state.threshold },
       uIsCube: { value: state.visualizationMode === VisualizationMode.Cube },
       uTimeLength: { value: state.timeLength },
-      uIsSlice: { value: false }, // Explicitly false for main 3D view
     }),
     [] 
   );
@@ -67,7 +45,6 @@ const VisualizationScene: React.FC<VisualizationSceneProps> = ({ state }) => {
     uniforms.uThreshold.value = state.threshold;
     uniforms.uIsCube.value = state.visualizationMode === VisualizationMode.Cube;
     uniforms.uTimeLength.value = state.timeLength;
-    uniforms.uIsSlice.value = false;
   });
 
   const isGlobe = state.visualizationMode === VisualizationMode.Globe;
@@ -77,7 +54,7 @@ const VisualizationScene: React.FC<VisualizationSceneProps> = ({ state }) => {
   const zSize = boxSize * state.timeLength;
   
   // Volumetric Slices Logic
-  const sliceCount = 80; 
+  const sliceCount = 80; // Increased slices for smoother 3D look
   const slices = useMemo(() => {
     if (isGlobe) return [];
     return Array.from({ length: sliceCount }).map((_, i) => {

@@ -8,7 +8,7 @@ export const DATASETS: Record<DatasetId, DatasetConfig> = {
     unit: 'Δ°C',
     min: -5,
     max: 5,
-    gradient: 'linear-gradient(to right, #3b82f6, #f3f4f6, #ef4444)',
+    gradient: 'linear-gradient(to right, transparent, #fcd34d, #ef4444)',
   },
   [DatasetId.Vegetation]: {
     id: DatasetId.Vegetation,
@@ -48,12 +48,8 @@ varying vec3 vPosition;
 void main() {
   vUv = uv;
   vNormal = normalize(normalMatrix * normal);
-  
-  // Pass world position to fragment shader for consistent 3D noise sampling
-  vec4 worldPosition = modelMatrix * vec4(position, 1.0);
-  vPosition = worldPosition.xyz;
-  
-  gl_Position = projectionMatrix * viewMatrix * worldPosition;
+  vPosition = position;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }
 `;
 
@@ -65,14 +61,12 @@ uniform float uOpacity;
 uniform float uThreshold;
 uniform bool uIsCube;
 uniform float uTimeLength;
-uniform bool uIsSlice; // New uniform to toggle between 3D volume and 2D time slice
 
 varying vec2 vUv;
 varying vec3 vNormal;
 varying vec3 vPosition;
 
-// --- SIMPLEX NOISE 3D ---
-// Standard efficient simplex noise implementation
+// Simplex 3D Noise 
 vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
 vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
 vec4 permute(vec4 x) { return mod289(((x*34.0)+1.0)*x); }
@@ -93,8 +87,8 @@ float snoise(vec3 v) {
   vec3 i2 = max( g.xyz, l.zxy );
 
   vec3 x1 = x0 - i1 + C.xxx;
-  vec3 x2 = x0 - i2 + C.yyy;
-  vec3 x3 = x0 - D.yyy;
+  vec3 x2 = x0 - i2 + C.yyy; // 2.0*C.x = 1/3 = C.y
+  vec3 x3 = x0 - D.yyy;      // -1.0+3.0*C.x = -0.5 = -D.y
 
   // Permutations
   i = mod289(i); 
@@ -103,13 +97,15 @@ float snoise(vec3 v) {
            + i.y + vec4(0.0, i1.y, i2.y, 1.0 )) 
            + i.x + vec4(0.0, i1.x, i2.x, 1.0 ));
 
-  float n_ = 0.142857142857;
+  // Gradients: 7x7 points over a square, mapped onto an octahedron.
+  // The ring size 17*17 = 289 is close to a multiple of 49 (49*6 = 294)
+  float n_ = 0.142857142857; // 1.0/7.0
   vec3  ns = n_ * D.wyz - D.xzx;
 
-  vec4 j = p - 49.0 * floor(p * ns.z * ns.z); 
+  vec4 j = p - 49.0 * floor(p * ns.z * ns.z);  //  mod(p,7*7)
 
   vec4 x_ = floor(j * ns.z);
-  vec4 y_ = floor(j - 7.0 * x_ ); 
+  vec4 y_ = floor(j - 7.0 * x_ );    // mod(j,N)
 
   vec4 x = x_ *ns.x + ns.yyyy;
   vec4 y = y_ *ns.x + ns.yyyy;
@@ -130,153 +126,118 @@ float snoise(vec3 v) {
   vec3 p2 = vec3(a1.xy,h.z);
   vec3 p3 = vec3(a1.zw,h.w);
 
+  //Normalise gradients
   vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2, p2), dot(p3,p3)));
   p0 *= norm.x;
   p1 *= norm.y;
   p2 *= norm.z;
   p3 *= norm.w;
 
+  // Mix final noise value
   vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
   m = m * m;
   return 42.0 * dot( m*m, vec4( dot(p0,x0), dot(p1,x1), 
                                 dot(p2,x2), dot(p3,x3) ) );
 }
 
-// --- COLOR FUNCTIONS ---
-
-vec4 getTemperatureColor(float val, float threshold) {
-  // Normalize val (approx -1 to 1) to 0..1 for easier mapping
-  float t = val * 0.5 + 0.5;
+vec4 getTemperatureColor(float val) {
+  // val is roughly -1 to 1.
   
-  // Diverging color map: Blue (Cold) -> White (Neutral) -> Red (Hot)
-  vec3 cold = vec3(0.2, 0.4, 0.9);
-  vec3 neutral = vec3(0.95, 0.95, 0.95);
-  vec3 hot = vec3(0.9, 0.2, 0.2);
+  // We want to simulate specific "Heatwave blobs"
+  // Cutoff everything below a certain threshold to simulate "normal" temp being invisible
+  float cutoff = 0.25;
   
-  // Filter out values close to neutral (0.5) based on threshold
-  // Threshold 0.0 = show all
-  // Threshold 0.9 = show only extreme
-  float dist = abs(t - 0.5) * 2.0; // 0 at center, 1 at edges
-  if (dist < threshold) discard;
+  // Re-normalize val from [0.25, 1.0] to [0.0, 1.0]
+  float t = smoothstep(cutoff, 1.0, val);
   
-  vec3 col = mix(cold, hot, t);
+  // Bright Yellow -> Orange -> Dark Red
+  vec3 c1 = vec3(1.0, 0.95, 0.2); // Bright Yellow
+  vec3 c2 = vec3(1.0, 0.4, 0.0);  // Orange
+  vec3 c3 = vec3(0.6, 0.0, 0.0);  // Dark Red
   
-  // Make center more transparent
-  float alpha = smoothstep(threshold, threshold + 0.2, dist);
+  vec3 col;
+  if (t < 0.5) {
+    col = mix(c1, c2, t * 2.0);
+  } else {
+    col = mix(c2, c3, (t - 0.5) * 2.0);
+  }
   
-  // Boost transparency near neutral slightly more for cleaner look
-  if (dist < 0.2) alpha *= 0.5;
+  // Opacity: sharper falloff to make them look like solid ghost objects
+  float alpha = smoothstep(0.0, 0.3, t) * 0.85;
   
   return vec4(col, alpha);
 }
 
-vec4 getVegetationColor(float val, float threshold) {
-  // Map -1..1 to 0..1
-  float t = val * 0.5 + 0.5;
-  if (t < threshold) discard;
-  
-  vec3 brown = vec3(0.8, 0.7, 0.4);
-  vec3 green = vec3(0.1, 0.6, 0.2);
-  
-  vec3 col = mix(brown, green, t);
-  float alpha = smoothstep(threshold, threshold + 0.2, t);
-  return vec4(col, alpha);
+vec4 getVegetationColor(float val) {
+  vec3 dry = vec3(0.8, 0.8, 0.2);
+  vec3 lush = vec3(0.1, 0.8, 0.2);
+  float t = smoothstep(-0.1, 0.9, val);
+  float alpha = smoothstep(-0.1, 0.4, val) * 0.7;
+  return vec4(mix(dry, lush, t), alpha);
 }
 
-vec4 getPrecipitationColor(float val, float threshold) {
-  float t = val * 0.5 + 0.5;
-  if (t < threshold) discard;
-  
-  vec3 light = vec3(0.7, 0.8, 0.9);
-  vec3 heavy = vec3(0.1, 0.2, 0.8);
-  
-  vec3 col = mix(light, heavy, t);
-  float alpha = smoothstep(threshold, threshold + 0.3, t);
-  return vec4(col, alpha);
+vec4 getPrecipitationColor(float val) {
+  vec3 light = vec3(0.8, 0.9, 1.0);
+  vec3 heavy = vec3(0.1, 0.3, 0.9);
+  float t = smoothstep(0.0, 0.8, val);
+  float alpha = smoothstep(0.0, 0.6, val) * 0.8;
+  return vec4(mix(light, heavy, t), alpha);
 }
 
 void main() {
-  float scale = 2.0;
-  float zCoord;
+  float scale = 3.5;
   
-  // Calculate Z coordinate based on Mode (Slice vs Cube/Globe)
-  if (uIsSlice) {
-      // In Slice Mode, we ignore the mesh's Z position (it's a flat plane).
-      // Instead, we sample the noise volume at the Z depth corresponding to uDay.
-      
-      // Calculate total Z size of the theoretical cube
-      float boxSize = 2.5;
-      float zSize = boxSize * uTimeLength;
-      
-      // Map uDay (0..365) to Z (-zSize/2 .. zSize/2)
-      float normTime = uDay / 365.0;
-      zCoord = -zSize/2.0 + normTime * zSize;
-      
-      // Apply the same Z scaling as the cube to match
-      zCoord *= 0.8; 
+  float zCoord = vPosition.z;
+  
+  if (!uIsCube) {
+     zCoord += uDay * 0.05; // Animate flow in Globe mode
   } else {
-      zCoord = vPosition.z;
-      
-      if (!uIsCube) {
-         // Globe Mode: Animate flow over the surface
-         zCoord += uDay * 0.05; 
-      } else {
-         // Cube Mode: Static structure, but we scale Z to elongate time features
-         zCoord *= 0.8; 
-      }
+     // Ensure continuity: The Z-axis is time. 
+     // We scale zCoord less than x/y to make 'events' stretch along time (creating "tubes" of events)
+     // rather than random noise per slice.
+     zCoord *= 0.8; 
   }
 
-  // --- ADVECTION / WEATHER DRIFT ---
-  // To make data look realistic (like weather fronts moving), 
-  // we shift the X/Y coordinates based on Z (Time).
-  // This creates "diagonal" tubes in the spacetime cube, representing movement.
+  // Primary Structure
+  float n = snoise(vec3(vPosition.x * scale, vPosition.y * scale, zCoord * scale));
   
-  // Westerlies simulation: drift East (X+) as Time (Z+) increases
-  float driftX = zCoord * 0.4; 
-  // Meandering Jet Stream: slight Wave in Y based on Z
-  float driftY = sin(zCoord * 1.5) * 0.1;
+  // Secondary Detail (simulating local variance)
+  float n2 = snoise(vec3(vPosition.x * scale * 2.1 + 10.0, vPosition.y * scale * 2.1 + 10.0, zCoord * scale * 1.5)) * 0.4;
   
-  vec3 noisePos = vec3(vPosition.x * scale - driftX, vPosition.y * scale + driftY, zCoord * scale);
+  float val = n + n2;
 
-  // --- FRACTAL NOISE ---
-  float n1 = snoise(noisePos);
-  float n2 = snoise(noisePos * 2.0 + vec3(5.2, 1.3, 0.8)) * 0.5;
-  float n3 = snoise(noisePos * 4.0 + vec3(1.2, 5.2, 2.1)) * 0.25;
-  
-  // Combine octaves
-  float val = (n1 + n2 + n3) / 1.75; // Normalize roughly back to -1..1 range
+  // Global Thresholding (User controlled)
+  // Shift val to make sure we have empty space for the threshold to work on
+  if (val < uThreshold) {
+    discard;
+  }
 
-  // Apply user threshold
-  // Threshold uniform is 0.0 to 1.0. 
-  // We need to pass it to color functions which expect normalized input 0..1
-  
   vec4 result = vec4(1.0);
 
   if (uMode == 0) {
-      result = getTemperatureColor(val, uThreshold);
+    result = getTemperatureColor(val); 
   } else if (uMode == 1) {
-      result = getVegetationColor(val, uThreshold);
+    result = getVegetationColor(val);
   } else if (uMode == 2) {
-      result = getPrecipitationColor(val, uThreshold);
+    result = getPrecipitationColor(val);
   } else if (uMode == 3) {
-      // Cloud specific logic
-      float t = val * 0.5 + 0.5;
-      if (t < uThreshold) discard;
-      float alpha = smoothstep(uThreshold, 1.0, t);
-      result = vec4(1.0, 1.0, 1.0, alpha);
+    float cloud = smoothstep(0.3, 0.9, val);
+    result = vec4(1.0, 1.0, 1.0, cloud);
   }
 
+  // Apply Global Opacity
   result.a *= uOpacity;
   
-  // Simple fake lighting
-  if (!uIsSlice) {
-      // Make it look volumetric
-      float light = 0.8 + 0.2 * (val * 0.5 + 0.5);
-      result.rgb *= light;
-  } else {
-      // Brighter for the slice view
-      result.rgb *= 1.1; 
-  }
+  // Fake lighting to give volume
+  vec3 lightDir = normalize(vec3(0.5, 1.0, 0.2));
+  // Flat normal from plane? No, use vNormal from noise variation if possible, 
+  // but since we are rendering flat slices, we need to fake the volume normal or just use basic lighting.
+  // Using vNormal (which comes from the flat plane) makes it look flat.
+  // Ideally we compute gradient of noise for normal, but for performance/simplicity in this demo:
+  // We just modulate brightness by density (val)
+  
+  float lighting = 0.7 + 0.3 * val; 
+  result.rgb *= lighting;
 
   gl_FragColor = result;
   

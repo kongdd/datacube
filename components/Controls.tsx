@@ -1,5 +1,5 @@
 import React from 'react';
-import { Play, Pause, Square, Globe, Layers, Settings, Filter, Clock, LayoutTemplate } from 'lucide-react';
+import { Play, Pause, Square, Globe, Layers, Settings, Filter, Clock } from 'lucide-react';
 import { AppState, DatasetId, VisualizationMode } from '../types';
 import { DATASETS } from '../constants';
 
@@ -26,7 +26,7 @@ const Controls: React.FC<ControlsProps> = ({ state, setState }) => {
   const isCube = state.visualizationMode === VisualizationMode.Cube;
 
   return (
-    <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-6 z-50">
+    <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-6">
       
       {/* Header */}
       <div className="pointer-events-auto flex justify-between items-start">
@@ -39,47 +39,30 @@ const Controls: React.FC<ControlsProps> = ({ state, setState }) => {
           </p>
         </div>
 
-        <div className="flex gap-2">
-            {/* View Mode Switcher */}
-            <div className="flex bg-slate-900/90 backdrop-blur border border-slate-700 rounded-lg p-1">
-              <button
-                onClick={() => handleModeToggle(VisualizationMode.Globe)}
-                className={`p-2 rounded-md transition-colors ${
-                  state.visualizationMode === VisualizationMode.Globe 
-                    ? 'bg-blue-600 text-white' 
-                    : 'text-slate-400 hover:text-white'
-                }`}
-                title="Globe View"
-              >
-                <Globe size={20} />
-              </button>
-              <button
-                onClick={() => handleModeToggle(VisualizationMode.Cube)}
-                className={`p-2 rounded-md transition-colors ${
-                  state.visualizationMode === VisualizationMode.Cube 
-                    ? 'bg-blue-600 text-white' 
-                    : 'text-slate-400 hover:text-white'
-                }`}
-                title="Datacube View"
-              >
-                <Square size={20} />
-              </button>
-            </div>
-
-            {/* Slice Panel Toggle */}
-            <div className="flex bg-slate-900/90 backdrop-blur border border-slate-700 rounded-lg p-1">
-              <button
-                onClick={() => setState(prev => ({ ...prev, showSlicePanel: !prev.showSlicePanel }))}
-                className={`p-2 rounded-md transition-colors ${
-                  state.showSlicePanel
-                    ? 'bg-emerald-600 text-white' 
-                    : 'text-slate-400 hover:text-white'
-                }`}
-                title="Toggle Spatial Slice View"
-              >
-                <LayoutTemplate size={20} />
-              </button>
-            </div>
+        {/* View Mode Switcher */}
+        <div className="flex bg-slate-900/90 backdrop-blur border border-slate-700 rounded-lg p-1">
+          <button
+            onClick={() => handleModeToggle(VisualizationMode.Globe)}
+            className={`p-2 rounded-md transition-colors ${
+              state.visualizationMode === VisualizationMode.Globe 
+                ? 'bg-blue-600 text-white' 
+                : 'text-slate-400 hover:text-white'
+            }`}
+            title="Globe View"
+          >
+            <Globe size={20} />
+          </button>
+          <button
+            onClick={() => handleModeToggle(VisualizationMode.Cube)}
+            className={`p-2 rounded-md transition-colors ${
+              state.visualizationMode === VisualizationMode.Cube 
+                ? 'bg-blue-600 text-white' 
+                : 'text-slate-400 hover:text-white'
+            }`}
+            title="Datacube View"
+          >
+            <Square size={20} />
+          </button>
         </div>
       </div>
 
@@ -138,17 +121,18 @@ const Controls: React.FC<ControlsProps> = ({ state, setState }) => {
           <div className="mb-4">
              <div className="flex justify-between text-xs text-slate-400 mb-2">
                <span>Filter Threshold</span>
-               <span>{state.threshold.toFixed(2)}</span>
+               <span>{state.threshold.toFixed(1)}</span>
              </div>
              <input
                 type="range"
-                min="0.0"
-                max="0.9"
-                step="0.05"
+                min="-1.0"
+                max="1.0"
+                step="0.1"
                 value={state.threshold}
                 onChange={(e) => setState(prev => ({...prev, threshold: parseFloat(e.target.value)}))}
                 className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
              />
+             <div className="text-[10px] text-slate-500 mt-1 text-right">Hide values &lt; {state.threshold.toFixed(1)}</div>
           </div>
 
           {/* Time Axis Length (Only in Cube Mode) */}
@@ -192,7 +176,7 @@ const Controls: React.FC<ControlsProps> = ({ state, setState }) => {
       </div>
 
       {/* Time Controls (Bottom Center/Full) */}
-      <div className="pointer-events-auto absolute bottom-6 left-1/2 -translate-x-1/2 w-[90%] md:w-[600px] bg-slate-900/90 backdrop-blur border border-slate-700 rounded-2xl p-4 flex flex-col gap-2 shadow-2xl z-50">
+      <div className="pointer-events-auto absolute bottom-6 left-1/2 -translate-x-1/2 w-[90%] md:w-[600px] bg-slate-900/90 backdrop-blur border border-slate-700 rounded-2xl p-4 flex flex-col gap-2 shadow-2xl">
         <div className="flex items-center justify-between mb-1">
           <span className="text-xs font-mono text-blue-400">DAY {Math.floor(state.time)} / 365</span>
           <div className="flex items-center gap-2">
